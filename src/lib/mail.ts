@@ -63,5 +63,8 @@ export async function sendMail(input: MailInput): Promise<void> {
     console.log(`\n[mail:dev] An: ${input.to}\nBetreff: ${input.subject}\n${text}\n`);
     return;
   }
-  await t.sendMail({ from, to: input.to, subject: input.subject, text, html: renderHtml(input) });
+  const info = await t.sendMail({ from, to: input.to, subject: input.subject, text, html: renderHtml(input) });
+  // Ohne diese Zeile bleibt eine angenommene, aber nie zugestellte Mail unsichtbar.
+  console.log(`[mail] "${input.subject}" von ${from}: akzeptiert=${info.accepted.join(",") || "-"} abgelehnt=${info.rejected.join(",") || "-"} antwort="${info.response}"`);
+  if (info.rejected.length > 0) throw new Error(`Mail abgelehnt: ${info.rejected.join(", ")}`);
 }
