@@ -1,0 +1,26 @@
+# Reverse-Proxy-Vorlage für aaPanel (Website wichtelwerk.neuhauser.cloud, SSL über Let's Encrypt)
+# In aaPanel unter "Reverse Proxy" bzw. in der Site-Konfiguration einfügen.
+
+limit_req_zone $binary_remote_addr zone=wichtel_login:10m rate=10r/m;
+
+location / {
+    proxy_pass http://127.0.0.1:4000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 60s;
+    client_max_body_size 2m;
+}
+
+# Mail-auslösende Formulare zusätzlich drosseln
+location ~ ^/(login|join) {
+    limit_req zone=wichtel_login burst=20 nodelay;
+    proxy_pass http://127.0.0.1:4000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}

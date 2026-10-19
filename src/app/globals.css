@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+:root {
+  --ww-green: #173f35;
+  --ww-green-soft: #24574a;
+  --ww-coral: #d75b45;
+  --ww-gold: #d6aa54;
+  --ww-cream: #fbf7ee;
+  --ww-ink: #1b2a26;
+  --ww-muted: #5d6e68;
+  --ww-line: #e6dfcf;
+  --ww-surface: #ffffff;
+  /* Branding-Override pro Organisation (V2) */
+  --brand: var(--ww-green);
+  --background: var(--ww-cream);
+  --foreground: var(--ww-ink);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-brand: var(--brand);
+  --color-green: var(--ww-green);
+  --color-green-soft: var(--ww-green-soft);
+  --color-coral: var(--ww-coral);
+  --color-gold: var(--ww-gold);
+  --color-cream: var(--ww-cream);
+  --color-muted: var(--ww-muted);
+  --color-line: var(--ww-line);
+  --color-surface: var(--ww-surface);
+  --font-sans: ui-rounded, "SF Pro Rounded", Nunito, "Segoe UI", system-ui, sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition
+    focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold disabled:opacity-50;
+}
+
+@layer components {
+  .btn-primary {
+    @apply btn bg-brand text-cream hover:opacity-90;
+  }
+  .btn-accent {
+    @apply btn bg-coral text-white hover:opacity-90;
+  }
+  .btn-ghost {
+    @apply btn border border-line bg-surface text-foreground hover:bg-cream;
+  }
+  .btn-danger {
+    @apply btn border border-coral/40 bg-surface text-coral hover:bg-coral/10;
+  }
+  .card {
+    @apply rounded-2xl border border-line bg-surface p-5 shadow-sm;
+  }
+  .input {
+    @apply w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-foreground
+      placeholder:text-muted/70 focus:border-brand focus:outline-2 focus:outline-gold/60;
+  }
+  .label {
+    @apply mb-1 block text-sm font-bold text-foreground;
+  }
+  .hint {
+    @apply mt-1 text-xs text-muted;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-full bg-cream px-2.5 py-0.5 text-xs font-bold text-brand ring-1 ring-line;
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

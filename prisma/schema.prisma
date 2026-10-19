@@ -1,0 +1,396 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  location_admin
+  member
+}
+
+enum Plan {
+  free
+  team
+  business
+  enterprise
+}
+
+enum CampaignMode {
+  onsite
+  shipping
+  mixed
+}
+
+enum CampaignStatus {
+  draft
+  open
+  drawn
+  revealed
+  closed
+}
+
+enum ParticipantStatus {
+  invited
+  joined
+  declined
+}
+
+enum ExclusionType {
+  same_department
+  pair
+  previous_year
+}
+
+enum SenderRole {
+  giver
+  receiver
+}
+
+enum VoucherStatus {
+  pending
+  delivered
+}
+
+// ---------------------------------------------------------------------------
+// Mandant
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  uidNummer   String?  @map("uid_nummer")
+  logoUrl     String?  @map("logo_url")
+  brandColor  String?  @map("brand_color")
+  plan        Plan     @default(free)
+  slackWebhookUrl String? @map("slack_webhook_url")
+  teamsWebhookUrl String? @map("teams_webhook_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  users         User[]
+  campaigns     Campaign[]
+  domains       SsoDomain[]
+  adminInvites  AdminInvite[]
+  previousPairs PreviousPair[]
+
+  @@map("organization")
+}
+
+/// V2: verifizierte E-Mail-Domain für SSO (DNS-TXT-Prüfung).
+model SsoDomain {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  domain         String       @unique
+  verifyToken    String       @map("verify_token")
+  verifiedAt     DateTime?    @map("verified_at")
+  /// Microsoft-Entra-Tenant; Pflicht für Entra-SSO, damit gefälschte E-Mail-Claims keine Rolle spielen.
+  entraTenantId  String?      @map("entra_tenant_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("sso_domain")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  organizationId String?   @map("organization_id")
+  email          String    @unique
+  emailVerified  DateTime? @map("email_verified")
+  name           String?
+  image          String?
+  department     String?
+  location       String?
+  role           Role      @default(member)
+  /// Nur für location_admin: Standorte, die verwaltet werden dürfen.
+  managedLocations String[] @map("managed_locations")
+  locale         String    @default("de")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  accounts     Account[]
+  participants Participant[]
+
+  @@index([organizationId])
+  @@map("user")
+}
+
+// Auth.js
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("account")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_token")
+}
+
+/// V2: Einladung weiterer Admins / Standort-Admins.
+model AdminInvite {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  email          String
+  role           Role
+  locations      String[]
+  token          String       @unique
+  expiresAt      DateTime     @map("expires_at")
+  usedAt         DateTime?    @map("used_at")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("admin_invite")
+}
+
+// ---------------------------------------------------------------------------
+// Aktion
+// ---------------------------------------------------------------------------
+
+model Campaign {
+  id             String         @id @default(cuid())
+  organizationId String         @map("organization_id")
+  title          String
+  description    String?
+  budgetCents    Int            @map("budget_cents")
+  currency       String         @default("EUR")
+  signupDeadline DateTime       @map("signup_deadline")
+  drawAt         DateTime       @map("draw_at")
+  handoverAt     DateTime?      @map("handover_at")
+  revealAt       DateTime       @map("reveal_at")
+  mode           CampaignMode   @default(onsite)
+  place          String?
+  /// Standort-Scope: Nur Admins dieses Standorts verwalten die Aktion (leer = Firma).
+  scopeLocation  String?        @map("scope_location")
+  status         CampaignStatus @default(draft)
+  deleteAfterDays Int           @default(30) @map("delete_after_days")
+  inviteToken    String         @unique @default(cuid()) @map("invite_token")
+  excludeSameDepartment Boolean @default(false) @map("exclude_same_department")
+  excludePreviousYear   Boolean @default(false) @map("exclude_previous_year")
+  allowLateJoin  Boolean        @default(true) @map("allow_late_join")
+
+  tier           Plan           @default(free)
+  stripeSessionId String?       @map("stripe_session_id")
+  paidAt         DateTime?      @map("paid_at")
+
+  drawnAt        DateTime?      @map("drawn_at")
+  revealedAt     DateTime?      @map("revealed_at")
+  closedAt       DateTime?      @map("closed_at")
+  /// Zeitpunkt, an dem personenbezogene Daten gelöscht werden.
+  purgeAt        DateTime?      @map("purge_at")
+  purgedAt       DateTime?      @map("purged_at")
+
+  guessGameEnabled Boolean      @default(false) @map("guess_game_enabled")
+  vouchersEnabled  Boolean      @default(false) @map("vouchers_enabled")
+
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  participants   Participant[]
+  rules          ExclusionRule[]
+  assignments    Assignment[]
+  reminders      ReminderLog[]
+  feedback       Feedback[]
+  guessVotes     GuessVote[]
+  vouchers       Voucher[]
+
+  @@index([organizationId])
+  @@index([status, drawAt])
+  @@map("campaign")
+}
+
+model Participant {
+  id                 String            @id @default(cuid())
+  campaignId         String            @map("campaign_id")
+  userId             String            @map("user_id")
+  status             ParticipantStatus @default(invited)
+  /// AES-256-GCM verschlüsselt (siehe lib/crypto.ts)
+  shippingAddressEnc String?           @map("shipping_address_enc")
+  lateJoiner         Boolean           @default(false) @map("late_joiner")
+  feedbackGiven      Boolean           @default(false) @map("feedback_given")
+  /// Einladungsmail wird vom Worker versandt, sobald dieses Feld leer ist.
+  inviteSentAt       DateTime?         @map("invite_sent_at")
+  joinedAt           DateTime?         @map("joined_at")
+  createdAt          DateTime          @default(now()) @map("created_at")
+
+  campaign Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wishlist Wishlist?
+  given    Assignment[] @relation("giver")
+  received Assignment[] @relation("receiver")
+  votes    GuessVote[]  @relation("guesser")
+
+  @@unique([campaignId, userId])
+  @@index([campaignId])
+  @@map("participant")
+}
+
+model Wishlist {
+  id            String   @id @default(cuid())
+  participantId String   @unique @map("participant_id")
+  text          String   @default("")
+  links         String[]
+  tags          String[]
+  noGos         String   @default("") @map("no_gos")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  participant Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@map("wishlist")
+}
+
+model ExclusionRule {
+  id            String        @id @default(cuid())
+  campaignId    String        @map("campaign_id")
+  type          ExclusionType
+  participantAId String?      @map("participant_a")
+  participantBId String?      @map("participant_b")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@map("exclusion_rule")
+}
+
+/// Ergebnis der Ziehung. Wird ausschließlich über lib/data/assignments.ts gelesen.
+model Assignment {
+  id         String    @id @default(cuid())
+  campaignId String    @map("campaign_id")
+  giverId    String    @map("giver_id")
+  receiverId String    @map("receiver_id")
+  revealed   Boolean   @default(false)
+  revealedAt DateTime? @map("revealed_at")
+
+  campaign Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  giver    Participant @relation("giver", fields: [giverId], references: [id], onDelete: Cascade)
+  receiver Participant @relation("receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  messages Message[]
+  vouchers Voucher[]
+
+  @@unique([campaignId, giverId])
+  @@unique([campaignId, receiverId])
+  @@map("assignment")
+}
+
+model Message {
+  id           String     @id @default(cuid())
+  assignmentId String     @map("assignment_id")
+  senderRole   SenderRole @map("sender_role")
+  body         String
+  readAt       DateTime?  @map("read_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@index([assignmentId, createdAt])
+  @@map("message")
+}
+
+/// Pseudonymisiertes Vorjahres-Paar (HMAC der E-Mail-Adressen).
+model PreviousPair {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  giverHash      String       @map("giver_hash")
+  receiverHash   String       @map("receiver_hash")
+  year           Int
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("previous_pair")
+}
+
+model ReminderLog {
+  id         String   @id @default(cuid())
+  campaignId String   @map("campaign_id")
+  kind       String
+  sentAt     DateTime @default(now()) @map("sent_at")
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, kind])
+  @@map("reminder_log")
+}
+
+/// Anonymes Feedback; bewusst ohne Verweis auf Teilnehmer.
+model Feedback {
+  id         String   @id @default(cuid())
+  campaignId String   @map("campaign_id")
+  rating     Int
+  comment    String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@map("feedback")
+}
+
+// ---------------------------------------------------------------------------
+// V2
+// ---------------------------------------------------------------------------
+
+/// "Wer war's?" – Tipp des Beschenkten, wer sein Wichtel ist.
+model GuessVote {
+  id              String   @id @default(cuid())
+  campaignId      String   @map("campaign_id")
+  guesserId       String   @map("guesser_id")
+  guessedGiverId  String   @map("guessed_giver_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  campaign Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  guesser  Participant @relation("guesser", fields: [guesserId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, guesserId])
+  @@map("guess_vote")
+}
+
+/// Kuratierter Geschenkideen-Katalog für Vorschläge passend zu Tags und Budget.
+model GiftIdea {
+  id           String   @id @default(cuid())
+  title        String
+  description  String   @default("")
+  tags         String[]
+  minCents     Int      @map("min_cents")
+  maxCents     Int      @map("max_cents")
+  url          String?
+  affiliate    Boolean  @default(false)
+  active       Boolean  @default(true)
+
+  @@map("gift_idea")
+}
+
+/// Digitaler Gutschein statt physischem Geschenk. Der Code wird vom Wichtel
+/// hinterlegt (Anbieter-neutral) und dem Beschenkten beim Reveal angezeigt.
+model Voucher {
+  id           String        @id @default(cuid())
+  campaignId   String        @map("campaign_id")
+  assignmentId String        @unique @map("assignment_id")
+  provider     String
+  amountCents  Int           @map("amount_cents")
+  codeEnc      String        @map("code_enc")
+  status       VoucherStatus @default(pending)
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  campaign   Campaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@map("voucher")
+}
